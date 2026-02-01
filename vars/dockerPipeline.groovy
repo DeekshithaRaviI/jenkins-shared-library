@@ -12,34 +12,23 @@ def call(Map config) {
         error "❌ imageName is required"
     }
 
-    def gitUrl              = config.gitUrl
-    def branch              = config.branch ?: 'main'
-    def imageName           = config.imageName
-    def imageTag            = config.imageTag ?: 'latest'
-    def containerPort       = config.containerPort ?: '8080'
-    def dockerHubCredentials= config.dockerHubCredentials ?: 'dockerhub-credentials'
-    def dockerfilePath      = config.dockerfilePath ?: 'Dockerfile'
-    def appDirectory        = config.appDirectory ?: '.'
+    def gitUrl               = config.gitUrl
+    def branch               = config.branch ?: 'main'
+    def imageName            = config.imageName
+    def imageTag             = config.imageTag ?: 'latest'
+    def containerPort        = config.containerPort ?: '8080'
+    def dockerHubCredentials = config.dockerHubCredentials ?: 'dockerhub-credentials'
+    def dockerfilePath       = config.dockerfilePath ?: 'Dockerfile'
+    def appDirectory         = config.appDirectory ?: '.'
 
-    /* =========================
-       Safe derived values
-       ========================= */
     def dockerImage   = "${imageName}:${imageTag}"
     def containerName = imageName.replaceAll('/', '-') + "-container"
 
     pipeline {
         agent any
 
-        environment {
-            DOCKER_IMAGE   = dockerImage
-            CONTAINER_NAME = containerName
-        }
-
         stages {
 
-            /* =========================
-               Clone Application Repo
-               ========================= */
             stage('Clone Repository') {
                 steps {
                     echo "🔄 Cloning repository: ${gitUrl}"
@@ -47,54 +36,42 @@ def call(Map config) {
                 }
             }
 
-            /* =========================
-               Build Docker Image
-               ========================= */
             stage('Build Docker Image') {
                 steps {
-                    echo "🐋 Building Docker image: ${DOCKER_IMAGE}"
+                    echo "🐋 Building Docker image: ${dockerImage}"
                     sh """
                         docker build \
-                        -t ${DOCKER_IMAGE} \
-                        -f ${dockerfilePath} \
-                        ${appDirectory}
+                          -t ${dockerImage} \
+                          -f ${dockerfilePath} \
+                          ${appDirectory}
                     """
                 }
             }
 
-            /* =========================
-               Run Docker Container
-               ========================= */
             stage('Run Docker Container') {
                 steps {
-                    echo "🚀 Running Docker container: ${CONTAINER_NAME}"
+                    echo "🚀 Running Docker container: ${containerName}"
                     sh """
-                        docker rm -f ${CONTAINER_NAME} || true
+                        docker rm -f ${containerName} || true
                         docker run -d \
-                          --name ${CONTAINER_NAME} \
+                          --name ${containerName} \
                           -p ${containerPort}:${containerPort} \
-                          ${DOCKER_IMAGE}
+                          ${dockerImage}
                         sleep 5
-                        docker ps | grep ${CONTAINER_NAME}
+                        docker ps | grep ${containerName}
                     """
                 }
             }
 
-            /* =========================
-               Test Container
-               ========================= */
             stage('Test Container') {
                 steps {
-                    echo "✅ Verifying container logs"
+                    echo "✅ Testing container"
                     sh """
-                        docker logs ${CONTAINER_NAME}
+                        docker logs ${containerName}
                     """
                 }
             }
 
-            /* =========================
-               Push Image to Docker Hub
-               ========================= */
             stage('Push to Docker Hub') {
                 steps {
                     echo "📤 Pushing image to Docker Hub"
@@ -105,21 +82,18 @@ def call(Map config) {
                     )]) {
                         sh """
                             echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                            docker push ${DOCKER_IMAGE}
+                            docker push ${dockerImage}
                             docker logout
                         """
                     }
                 }
             }
 
-            /* =========================
-               Cleanup
-               ========================= */
             stage('Cleanup Local Container') {
                 steps {
                     echo "🧹 Cleaning up container"
                     sh """
-                        docker rm -f ${CONTAINER_NAME} || true
+                        docker rm -f ${containerName} || true
                     """
                 }
             }
@@ -128,7 +102,7 @@ def call(Map config) {
         post {
             success {
                 echo "✅ Pipeline completed successfully"
-                echo "🐋 Image pushed: ${DOCKER_IMAGE}"
+                echo "🐋 Image pushed: ${dockerImage}"
             }
             failure {
                 echo "❌ Pipeline failed"
