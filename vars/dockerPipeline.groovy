@@ -7,7 +7,7 @@ def call(Map config) {
 
             stage('Clone Repository') {
                 steps {
-                    git config.gitRepo
+                    git branch: 'main', url: "${config.gitRepo}"
                 }
             }
 
