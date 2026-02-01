@@ -3,12 +3,6 @@ def call(Map config) {
     pipeline {
         agent any
 
-        environment {
-            IMAGE_NAME = config.imageName
-            IMAGE_TAG  = config.imageTag
-            DOCKERHUB  = credentials(config.dockerHubCreds)
-        }
-
         stages {
 
             stage('Clone Repository') {
@@ -20,7 +14,7 @@ def call(Map config) {
             stage('Build Docker Image') {
                 steps {
                     sh """
-                      docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                      docker build -t ${config.imageName}:${config.imageTag} .
                     """
                 }
             }
@@ -29,18 +23,26 @@ def call(Map config) {
                 steps {
                     sh """
                       docker run -d -p ${config.containerPort}:${config.containerPort} \
-                      --name demo_container ${IMAGE_NAME}:${IMAGE_TAG} || true
+                      --name demo_container ${config.imageName}:${config.imageTag} || true
                     """
                 }
             }
 
             stage('Push Image to Docker Hub') {
                 steps {
-                    sh """
-                      echo ${DOCKERHUB_PSW} | docker login -u ${DOCKERHUB_USR} --password-stdin
-                      docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${DOCKERHUB_USR}/${IMAGE_NAME}:${IMAGE_TAG}
-                      docker push ${DOCKERHUB_USR}/${IMAGE_NAME}:${IMAGE_TAG}
-                    """
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: config.dockerHubCreds,
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )
+                    ]) {
+                        sh """
+                          echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                          docker tag ${config.imageName}:${config.imageTag} $DOCKER_USER/${config.imageName}:${config.imageTag}
+                          docker push $DOCKER_USER/${config.imageName}:${config.imageTag}
+                        """
+                    }
                 }
             }
         }
