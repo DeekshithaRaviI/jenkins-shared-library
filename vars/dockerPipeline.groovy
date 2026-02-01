@@ -12,11 +12,15 @@ def call(Map config) {
         error "❌ imageName is required"
     }
 
+    /* =========================
+       Config with defaults
+       ========================= */
     def gitUrl               = config.gitUrl
     def branch               = config.branch ?: 'main'
     def imageName            = config.imageName
     def imageTag             = config.imageTag ?: 'latest'
-    def containerPort        = config.containerPort ?: '8080'
+    def containerPort        = config.containerPort ?: '8080'   // app runs inside container
+    def hostPort             = config.hostPort ?: '8081'        // exposed on localhost
     def dockerHubCredentials = config.dockerHubCredentials ?: 'dockerhub-credentials'
     def dockerfilePath       = config.dockerfilePath ?: 'Dockerfile'
     def appDirectory         = config.appDirectory ?: '.'
@@ -55,7 +59,7 @@ def call(Map config) {
                         docker rm -f ${containerName} || true
                         docker run -d \
                           --name ${containerName} \
-                          -p ${containerPort}:${containerPort} \
+                          -p ${hostPort}:${containerPort} \
                           ${dockerImage}
                         sleep 5
                         docker ps | grep ${containerName}
@@ -65,7 +69,7 @@ def call(Map config) {
 
             stage('Test Container') {
                 steps {
-                    echo "✅ Testing container"
+                    echo "✅ Testing container logs"
                     sh """
                         docker logs ${containerName}
                     """
@@ -102,6 +106,7 @@ def call(Map config) {
         post {
             success {
                 echo "✅ Pipeline completed successfully"
+                echo "🌐 App available at: http://localhost:${hostPort}"
                 echo "🐋 Image pushed: ${dockerImage}"
             }
             failure {
