@@ -1,24 +1,29 @@
-// Jenkins Shared Library - Docker Pipeline
-// File: vars/dockerPipeline.groovy
-// Purpose: Reusable CI/CD pipeline for Docker applications
+// vars/dockerPipeline.groovy
 
 def call(Map config) {
+    // Validate required parameters
+    def gitUrl = config.gitUrl ?: error("gitUrl is required")
+    def imageName = config.imageName ?: error("imageName is required")
+    def imageTag = config.imageTag ?: 'latest'
+    def containerPort = config.containerPort ?: '8080'
+    def dockerHubCredentials = config.dockerHubCredentials ?: 'dockerhub-credentials'
+    def dockerfilePath = config.dockerfilePath ?: 'Dockerfile'
+    def appDirectory = config.appDirectory ?: '.'
+    
     pipeline {
         agent any
         
         environment {
-            IMAGE_NAME = "${config.imageName}"
-            IMAGE_TAG = "${config.imageTag}"
-            CONTAINER_NAME = "demo_container"
+            DOCKER_IMAGE = "${imageName}:${imageTag}"
+            CONTAINER_NAME = "${imageName}-container"
         }
         
         stages {
             stage('Clone Repository') {
                 steps {
                     script {
-                        echo "📥 Cloning repository: ${config.gitRepo}"
-                        git branch: 'main', url: config.gitRepo
-                        echo "✅ Repository cloned successfully"
+                        echo "🔄 Cloning repository: ${gitUrl}"
+                        git branch: config.branch ?: 'main', url: gitUrl
                     }
                 }
             }
@@ -26,11 +31,10 @@ def call(Map config) {
             stage('Build Docker Image') {
                 steps {
                     script {
-                        echo "🔨 Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                        echo "🐋 Building Docker image: ${DOCKER_IMAGE}"
                         sh """
-                            docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                            docker build -t ${DOCKER_IMAGE} -f ${dockerfilePath} ${appDirectory}
                         """
-                        echo "✅ Docker image built successfully"
                     }
                 }
             }
@@ -38,83 +42,72 @@ def call(Map config) {
             stage('Run Docker Container') {
                 steps {
                     script {
-                        echo "🚀 Running Docker container on port ${config.containerPort}"
-                        // Remove existing container if exists
+                        echo "🚀 Running Docker container: ${CONTAINER_NAME}"
+                        // Stop and remove existing container if exists
                         sh """
-                            docker rm -f ${CONTAINER_NAME} 2>/dev/null || true
-                            docker run -d -p ${config.containerPort}:${config.containerPort} \
-                                --name ${CONTAINER_NAME} ${IMAGE_NAME}:${IMAGE_TAG}
-                        """
-                        echo "✅ Container started successfully"
-                        
-                        // Wait for container to be healthy
-                        sleep(time: 5, unit: 'SECONDS')
-                        
-                        // Verify container is running
-                        sh """
+                            docker rm -f ${CONTAINER_NAME} || true
+                            docker run -d --name ${CONTAINER_NAME} -p ${containerPort}:${containerPort} ${DOCKER_IMAGE}
+                            sleep 5
                             docker ps | grep ${CONTAINER_NAME}
                         """
                     }
                 }
             }
             
-            stage('Push Image to Docker Hub') {
+            stage('Test Container') {
+                steps {
+                    script {
+                        echo "✅ Testing container health"
+                        sh """
+                            docker logs ${CONTAINER_NAME}
+                            echo "Container is running successfully!"
+                        """
+                    }
+                }
+            }
+            
+            stage('Push to Docker Hub') {
                 steps {
                     script {
                         echo "📤 Pushing image to Docker Hub"
-                        withCredentials([
-                            usernamePassword(
-                                credentialsId: config.dockerHubCreds,
-                                usernameVariable: 'DOCKER_USER',
-                                passwordVariable: 'DOCKER_PASS'
-                            )
-                        ]) {
+                        withCredentials([usernamePassword(
+                            credentialsId: dockerHubCredentials,
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
                             sh """
-                                # Login to Docker Hub
-                                echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                                
-                                # Tag image with Docker Hub username
-                                docker tag ${IMAGE_NAME}:${IMAGE_TAG} \$DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
-                                
-                                # Push to Docker Hub
-                                docker push \$DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
-                                
-                                # Logout for security
+                                echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                                docker push ${DOCKER_IMAGE}
                                 docker logout
                             """
                         }
-                        echo "✅ Image pushed to Docker Hub successfully"
+                    }
+                }
+            }
+            
+            stage('Cleanup Local Container') {
+                steps {
+                    script {
+                        echo "🧹 Cleaning up local test container"
+                        sh """
+                            docker stop ${CONTAINER_NAME} || true
+                            docker rm ${CONTAINER_NAME} || true
+                        """
                     }
                 }
             }
         }
         
         post {
-            always {
-                script {
-                    echo "🧹 Cleaning up..."
-                    sh "docker rm -f ${CONTAINER_NAME} 2>/dev/null || true"
-                }
-            }
             success {
-                echo """
-                ========================================
-                ✅ PIPELINE COMPLETED SUCCESSFULLY! ✅
-                ========================================
-                Image: ${IMAGE_NAME}:${IMAGE_TAG}
-                Container: ${CONTAINER_NAME}
-                Port: ${config.containerPort}
-                ========================================
-                """
+                echo "✅ Pipeline completed successfully!"
+                echo "🐋 Docker image pushed: ${DOCKER_IMAGE}"
             }
             failure {
-                echo """
-                ========================================
-                ❌ PIPELINE FAILED! ❌
-                ========================================
-                Please check the logs above for errors.
-                ========================================
-                """
+                echo "❌ Pipeline failed!"
+            }
+            always {
+                echo "🔚 Pipeline execution finished"
             }
         }
     }
