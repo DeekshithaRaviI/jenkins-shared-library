@@ -5,12 +5,6 @@ def call(Map config) {
 
         stages {
 
-            stage('Clone Repository') {
-                steps {
-                    git branch: 'main', url: "${config.gitRepo}"
-                }
-            }
-
             stage('Build Docker Image') {
                 steps {
                     sh """
