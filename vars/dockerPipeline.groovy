@@ -6,7 +6,7 @@ def call(Map config) {
             stage('Clone Repository') {
                 steps {
                     git branch: 'main', 
-                        url: config.repoUrl
+                        url: config.gitRepo
                 }
             }
             
@@ -23,7 +23,6 @@ def call(Map config) {
             stage('Run Docker Container') {
                 steps {
                     script {
-                        // Remove existing container if it exists
                         sh """
                             docker rm -f demo_container || true
                             docker run -d -p ${config.containerPort}:${config.containerPort} \
@@ -60,10 +59,10 @@ def call(Map config) {
                 sh "docker rm -f demo_container || true"
             }
             success {
-                echo "Pipeline completed successfully!"
+                echo "✅ Pipeline completed successfully!"
             }
             failure {
-                echo "Pipeline failed. Check logs above."
+                echo "❌ Pipeline failed. Check logs above."
             }
         }
     }
